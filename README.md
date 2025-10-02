@@ -4,7 +4,10 @@ A Python library that automatically converts Pydantic data models and validation
 
 ## Overview
 
-The Pydantic LDP Generator bridges the gap between Python data validation logic from Pydantic and Databricks Lakeflow Declarative Pipeline. It scans Pydantic repositories to understand models and validators, then generates comprehensive LDP pipelines with AI-powered validation conversion.
+The Pydantic LDP Generator bridges the gap between Python data validation logic from Pydantic and Databricks Lakeflow Declarative Pipeline. It scans Pydantic repositories to understand models and validators, then generates templates for LDP pipelines with AI-powered validation conversion to create LDP expectations.
+
+<img width="1227" height="543" alt="image" src="https://github.com/user-attachments/assets/35f4eaab-c9b0-43d1-a7b0-a8b4c6917950" />
+
 
 ## Key Features
 
