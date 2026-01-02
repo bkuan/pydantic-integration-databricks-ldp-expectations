@@ -11,10 +11,12 @@ The Pydantic LDP Generator bridges the gap between Python data validation logic 
 
 ## Key Features
 
-- **AI-Powered Validation Conversion**: Automatically converts custom Python validators to SQL using Databricks AI
-- **Intelligent Model Discovery**: Scans repositories to find Pydantic models and custom validators
+- **AI-Powered Validation Conversion**: Automatically converts custom Python validators to SQL using Databricks AI (`ai_query()`)
+- **Intelligent Model Discovery**: Scans repositories to find Pydantic models, field validators, model validators, and standalone validators
 - **Pipeline Generation**: Creates starting point for LDP pipeline with quarantine and monitoring
-- **Flexible Configuration**: Supports various validation actions, database settings
+- **Reusable Expectations**: Generates validation rules as portable Python functions following Databricks best practices
+- **AI Response Caching**: Caches AI query responses for improved performance and cost efficiency
+- **Flexible Configuration**: Supports various validation actions, database settings, and AI model options
 
 
 ## Quick Start
@@ -32,21 +34,40 @@ generator = Generator(config, 'Customer')
 generator.create_ldp_template('customer_table')
 ```
 
-### Generate LDP pipeline code
+### Generate Complete Pipeline System
 
 ```python
+# Creates main pipeline, quarantine, monitoring, and config files
 generator.create_complete_system('customer_table', 'generated_pipeline')
+```
+
+### Model Analysis
+
+```python
+from pydantic_ldp_generator import ModelSelector, Config
+
+config = Config(source_paths=["domain", "validators_lib"])
+selector = ModelSelector(config, 'Customer')
+selector.show_analysis()
+
+# Programmatic access
+fields = selector.get_fields()
+rules = selector.get_validation_rules()
+custom_rules = selector.get_custom_validator_rules()
 ```
 
 ## Architecture
 
 ### Core Components
 
-- **ModelDiscovery**: Scans repositories for Pydantic models and custom validators
-- **ValidatorAnalyzer**: Analyzes validation logic and converts to SQL expectations
-- **TemplateGenerator**: Creates complete LDP pipeline systems
-- **Generator**: High-level API for single-model LDP code generation
-- **ModelSelector**: Interactive model analysis and selection
+| Component | Description |
+|-----------|-------------|
+| **ModelDiscovery** | Scans repositories for Pydantic models and custom validators |
+| **ValidatorAnalyzer** | Analyzes validation logic and converts to SQL expectations using AI |
+| **TemplateGenerator** | Creates complete LDP pipeline systems with Jinja2 templates |
+| **Generator** | High-level API for single-model LDP code generation |
+| **ModelSelector** | Interactive model analysis and exploration |
+| **AIQueryCache** | Caches AI responses for performance optimization |
 
 ### Configuration
 
@@ -70,7 +91,10 @@ config = Config(
         ai=AIConfig(
             enabled=True,
             model="databricks-claude-sonnet-4",
-            timeout_seconds=30
+            timeout_seconds=30,
+            use_mock_responses=False,  # Set True for development/testing
+            enable_cache=True,
+            cache_size_limit=1000
         )
     )
 )
@@ -78,14 +102,21 @@ config = Config(
 
 ## Usage Examples
 
-### Model Analysis
+### Standalone Model Discovery
 
 ```python
-from pydantic_ldp_generator import ModelSelector, Config
+from pydantic_ldp_generator import ModelDiscovery, Config
 
 config = Config(source_paths=["domain", "validators_lib"])
-selector = ModelSelector(config, 'Customer')
-selector.show_analysis()
+discovery = ModelDiscovery(config)
+
+# Scan all configured paths
+models, validators = discovery.scan_repository()
+
+for model_name, model_info in models.items():
+    print(f"{model_info.name}: {len(model_info.fields)} fields")
+    print(f"  Field validators: {model_info.field_validators}")
+    print(f"  Model validators: {model_info.model_validators}")
 ```
 
 ### Custom Validator Integration
@@ -99,37 +130,73 @@ def email_validator(email: str) -> str:
         raise ValueError("Invalid email format")
     return email
 
-# Automatically converted to SQL:
-# @LDP.expect_or_drop("email_format", "email RLIKE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$'")
+# Automatically converted to SQL expectation:
+# "email RLIKE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$'"
+```
+
+### Cross-Field Validation (Model Validators)
+
+```python
+# Model validator in your Pydantic model
+@model_validator(mode='after')
+def validate_contact_completeness(self):
+    if not self.phone and not self.email:
+        raise ValueError("Must have phone or email")
+    return self
+
+# Converted to SQL:
+# "(phone IS NOT NULL AND LENGTH(TRIM(phone)) > 0) OR (email IS NOT NULL AND LENGTH(TRIM(email)) > 0)"
 ```
 
 ## Generated Files
 
-When creating the LDP code, the generator produces:
+When creating the LDP code with `create_complete_system()`, the generator produces:
 
-- `main_pipeline.py` - Main LDP pipeline with all models
-- `quarantine_pipeline.py` - Quarantine management system
-- `monitoring_pipeline.py` - Data quality monitoring
-- `pipeline_config.yml` - Configuration metadata
+| File | Description |
+|------|-------------|
+| `main_pipeline.py` | Main LDP pipeline with all models and reusable expectations |
+| `validation_rules.py` | Reusable validation rules module for portability |
+| `quarantine_pipeline.py` | Quarantine management for failed records |
+| `monitoring_pipeline.py` | Data quality monitoring and metrics |
+| `pipeline_config.yml` | Configuration metadata in YAML format |
+| `README.md` | Generated documentation for the pipeline |
 
 ## Validation Rules
 
 The library automatically generates validation rules for:
 
-- **Type Validation**: String, integer, float, boolean, datetime fields
-- **Format Validation**: Email, URL, phone number patterns
-- **Range Validation**: Min/max length, numeric ranges
-- **Custom Validators**: AI-converted Python validation logic
-- **Required Fields**: Null checks and mandatory field validation
+| Rule Type | Description |
+|-----------|-------------|
+| `required_field` | NULL checks for mandatory fields |
+| `basic_type_check` | SQL typeof() validation for Python types |
+| `custom_type` | Custom Pydantic types (Email, ZipCode, etc.) |
+| `custom_validator` | AI-converted standalone validator functions |
+| `field_validator` | `@field_validator` decorated methods |
+| `model_validator` | `@model_validator` cross-field validation |
 
 ## AI Integration
 
-The library leverages Databricks AI_query to convert complex Python validators to SQL:
+The library leverages Databricks `ai_query()` to convert complex Python validators to SQL:
 
-- **Model**: Configurable AI model (default: databricks-claude-sonnet-4)
+- **Model**: Configurable AI model (default: `databricks-claude-sonnet-4`)
 - **Timeout**: Configurable timeout for AI queries
 - **Fallback**: Basic validation rules if AI conversion fails
-- **Custom Types**: Automatic detection and conversion of custom field types
+- **Caching**: Response caching to avoid duplicate queries
+- **Mock Mode**: Mock responses for development without Databricks access
+
+### AI Caching
+
+```python
+from pydantic_ldp_generator import get_ai_cache, clear_ai_cache
+
+# View cache statistics
+cache = get_ai_cache()
+stats = cache.get_stats()
+print(f"Hit rate: {stats['hit_rate_percent']}%")
+
+# Clear cache when needed
+clear_ai_cache()
+```
 
 ## Database Configuration
 
@@ -159,7 +226,7 @@ Failed records are automatically quarantined with detailed failure analysis:
 
 ```python
 # Quarantine pipeline includes:
-# - Failed validation details
+# - Failed validation details per rule
 # - Timestamp tracking
 # - Failure type analysis
 # - Model-specific quarantine tables
@@ -171,9 +238,28 @@ Comprehensive data quality monitoring:
 
 ```python
 # Monitoring tables include:
-# - data_quality_metrics: Overall quality metrics
-# - failure_analysis: Validation failure breakdown
+# - data_quality_metrics: Overall quality metrics per model
+# - failure_analysis: Validation failure breakdown by type
 # - daily_quality_trends: Quality trends over time
+```
+
+### Reusable Expectations Pattern
+
+Generated pipelines follow Databricks best practices:
+
+```python
+def get_customer_rules():
+    """Reusable validation rules for Customer model."""
+    return {
+        "required_field_name": "name IS NOT NULL",
+        "format_email": "email RLIKE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$'",
+        "model_validator_contact": "(phone IS NOT NULL) OR (email IS NOT NULL)"
+    }
+
+@dp.table(comment="Validated Customer records")
+@dp.expect_all_or_drop(get_customer_rules())
+def customer_validated():
+    return dp.read("customer_raw")
 ```
 
 ### Template Customization
@@ -202,3 +288,4 @@ template_config = TemplateConfig(
 
 
 For issues, questions, or contributions, please refer to the project repository or contact the maintainers.
+
