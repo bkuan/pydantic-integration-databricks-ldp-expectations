@@ -5,5 +5,5 @@ from .core import email_validator, zipcode_validator, sex_validator, past_date_v
 Email    = Annotated[str, AfterValidator(email_validator)]
 ZipCode  = Annotated[str, AfterValidator(zipcode_validator)]
 Sex      = Annotated[str, AfterValidator(sex_validator)]
-PastDate = Annotated[str, AfterValidator(past_date_validator)]  # accept ISO date strings
+PastDate = Annotated[str, AfterValidator(past_date_validator)]  
 Name     = Annotated[str, Field(min_length=1, max_length=80)]
